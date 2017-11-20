@@ -1,61 +1,48 @@
 %% Stochastic NGM
 %
-% Attribution: Jesus Fernandez-Villaverde
-% Haverford, July 3, 2013
-% Source: https://github.com/jesusfv/Comparison-Programming-Languages-Economics/blob/master/RBC_Matlab.m
+% Attribution: 
+% - Author: Jesus Fernandez-Villaverde
+% - Source: https://github.com/jesusfv/Comparison-Programming-Languages-Economics/blob/master/RBC_Matlab.m
 %
-% Adapted for ECON 602, Assignment 7 by
-% Sam Boysel
-
-%% 0. Housekeeping
+% Adapted for ECON 602 - Assignment 7 by Sam Boysel
 
 clear all
-close all
-clc
 
-tic
+rng(123);
 
-%%  1. Calibration
+%%  Q2: Calibration
 
 alpha = 0.36;    % Elasticity of output w.r.t. capital
 beta  = 0.96;    % Discount factor
-
-% Productivity values
-vProductivity = [exp(-sqrt(0.007^2/(1 - 0.95^2)));
-                 exp(sqrt(0.007^2/(1 - 0.95^2)))]';
 
 % Transition matrix
 mTransition = [0.975, 0.025;
                0.025, 0.975];
 
-%% 2. Steady State
+% Productivity shocks
+vProductivity = [exp(-sqrt(0.007^2/(1 - 0.95^2)));
+                 exp(sqrt(0.007^2/(1 - 0.95^2)))]'; 
 
-capitalSteadyState = (alpha*beta)^(1/(1-alpha));
-outputSteadyState = capitalSteadyState^alpha;
-consumptionSteadyState = outputSteadyState-capitalSteadyState;
+% Steady state
+k_bar = (alpha*beta)^(1/(1-alpha));
+y_bar = k_bar^alpha;
+c_bar = y_bar-k_bar;
 
-fprintf(' y_ss = %2.6f, k_ss = %2.6f, c_ss = %2.6f\n', outputSteadyState, capitalSteadyState, consumptionSteadyState);
-fprintf('\n')
+% Capital space
+vGridCapital = [0.95*k_bar, 1.05*k_bar];
 
-% We generate the grid of capital
-vGridCapital = 0.95*capitalSteadyState:0.00001:1.05*capitalSteadyState;
+% Output space
+mOutput = (vGridCapital'.^alpha)*vProductivity;                     
 
-nGridCapital = length(vGridCapital);
-nGridProductivity = length(vProductivity);
+%% Q2: VFI
 
-%% 3. Required matrices and vectors
-
-mOutput           = zeros(nGridCapital,nGridProductivity);
-mValueFunction    = zeros(nGridCapital,nGridProductivity);
-mValueFunctionNew = zeros(nGridCapital,nGridProductivity);
-mPolicyFunction   = zeros(nGridCapital,nGridProductivity);
+nGridCapital          = length(vGridCapital);
+nGridProductivity     = length(vProductivity);
+mOutput               = zeros(nGridCapital,nGridProductivity);
+mValueFunction        = zeros(nGridCapital,nGridProductivity);
+mValueFunctionNew     = zeros(nGridCapital,nGridProductivity);
+mPolicyFunction       = zeros(nGridCapital,nGridProductivity); % rows = [kl, kh], cols = [zl, zh]
 expectedValueFunction = zeros(nGridCapital,nGridProductivity);
-
-%% 4. We pre-build output for each point in the grid
-
-mOutput = (vGridCapital'.^alpha)*vProductivity;
-
-%% 5. Main iteration
 
 maxDifference = 10.0;
 tolerance = 0.0000001;
@@ -67,7 +54,6 @@ while (maxDifference>tolerance)
 
     for nProductivity = 1:nGridProductivity
 
-        % We start from previous choice (monotonicity of policy function)
         gridCapitalNextPeriod = 1;
 
         for nCapital = 1:nGridCapital
@@ -85,7 +71,7 @@ while (maxDifference>tolerance)
                     capitalChoice = vGridCapital(nCapitalNextPeriod);
                     gridCapitalNextPeriod = nCapitalNextPeriod;
                 else
-                    break; % We break when we have achieved the max
+                    break;
                 end
 
             end
@@ -110,37 +96,37 @@ end
 fprintf(' Iteration = %d, Sup Diff = %2.8f\n', iteration, maxDifference);
 fprintf('\n')
 
-fprintf(' My check = %2.6f\n', mPolicyFunction(1000,2));
-fprintf('\n')
+%% Q4: expected value for output (LR mean)
+e_y = 0.4875*0.9778*0.1806^0.36 + 0.0125*1.02267*0.1806^0.36 + 0.0125*0.9778*0.1996^0.36 + 0.4875*1.02267*0.1996^0.36;
 
-toc
+%% Q5: Simulation
+nPeriods = 10000;
+y_sim = [];
+k_sim = [];
+c_sim = [];
+y_sim(1) = 0;
+k_sim(1) = vGridCapital(1); % Start at k_low
 
-%% 6. Plotting results
+% Simulate shocks according to Markov chain
+mc = dtmc(mTransition);
+sim = simulate(mc, nPeriods);
 
-figure(1)
+% Simulate Stochastic NGM (T = 10,000)
+for i = 1:nPeriods
+    % Realize Shock
+    shock = vProductivity(sim(i));
+    % Policy Function
+    if (shock>1)
+        k_sim(i+1) = vGridCapital(2); % high state
+    else
+        k_sim(i+1) = vGridCapital(1); % low state
+    end
+    % Production
+    y_sim(i) = shock*k_sim(i)^alpha;
+    % Consumption
+    c_sim(i) = y_sim(i) - k_sim(i+1);
+end
 
-subplot(3,1,1)
-plot(vGridCapital,mValueFunction)
-xlabel('k')
-ylabel('V(k, z)')
-xlim([vGridCapital(1) vGridCapital(nGridCapital)])
-title('Value Function')
-legend('k_l','k_h','Location','southeast')
-
-subplot(3,1,2)
-plot(vGridCapital,mPolicyFunction)
-xlabel('k')
-ylabel("k'")
-xlim([vGridCapital(1) vGridCapital(nGridCapital)])
-title('Policy Function')
-legend('k_l','k_h','Location','southeast')
-
-% vExactPolicyFunction = alpha*beta.*(vGridCapital.^alpha);
-% 
-% subplot(3,1,3)
-% plot((100.*(vExactPolicyFunction'-mPolicyFunction(:,2))./mPolicyFunction(:,2)))
-% xlabel('Iteration')
-% title('Comparison of Exact and Approximated Policy Function')
-
-%set(gcf,'PaperOrientation','landscape','PaperPosition',[-0.9 -0.5 12.75 9])
-%print('-dpdf','Figure1.pdf')
+mean(k_sim) % 0.1901
+mean(y_sim) % 0.5502
+mean(c_sim) % 0.3601
